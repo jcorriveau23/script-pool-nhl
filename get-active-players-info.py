@@ -14,34 +14,6 @@ PUCK_PEDIA_URL = f"https://dashboard.puckpedia.com/?sz={LIMIT}"
 with open("non-matching-players.json", "r") as json_file:
     EXCEPTION_PLAYERS: dict[str, int | None] = json.loads(json_file.read())
 
-def _fill_last_season_score(database_player_found: PlayerInfo, cells: Any) -> None:
-    """
-    Return all the score from puck pedia into the LastSeasonScore in database.
-    """
-
-    def _get_optional_int_value(string_integer: str)->int | None:
-        try:
-            return int(string_integer)
-        except ValueError:
-            return None
-        
-    def _get_optional_float_value(string_integer: str)->float | None:
-        try:
-            return float(string_integer)
-        except ValueError:
-            return None
-        
-    game_played = _get_optional_int_value(cells[20].text)
-    points = _get_optional_int_value(cells[23].text)
-
-    database_player_found.game_played = game_played
-    database_player_found.goals = _get_optional_int_value(cells[21].text)
-    database_player_found.assists = _get_optional_int_value(cells[22].text)
-    database_player_found.points = points
-    database_player_found.points_per_game = points / game_played if game_played is not None and game_played > 0 and points is not None else None
-    database_player_found.goal_against_average = _get_optional_float_value(cells[28].text)
-    database_player_found.save_percentage = _get_optional_float_value(cells[29].text)
-
 def _get_converted_season(formated_season: str)->int | None:
     """
     Return a season as integer to store in data base.
@@ -112,10 +84,31 @@ def find_player_in_database_with_id(players_collection: Any, player_id: int) -> 
     return players[0]
 
 def update_player_in_database(players_collection: Any, database_player_found: PlayerInfo, cells: Any, contract_expiration_season: int | None) -> bool:
+    def _get_optional_int_value(string_integer: str)->int | None:
+        try:
+            return int(string_integer)
+        except ValueError:
+            return None
+        
+    def _get_optional_float_value(string_integer: str)->float | None:
+        try:
+            return float(string_integer)
+        except ValueError:
+            return None
+
     database_player_found.age = int(cells[7].text)
     database_player_found.contract_expiration_season = contract_expiration_season
     database_player_found.salary_cap = _get_salary_cap(cells[3].text) if contract_expiration_season is not None else None
-    _fill_last_season_score(database_player_found, cells)
+
+    game_played = _get_optional_int_value(cells[20].text)
+    points = _get_optional_int_value(cells[23].text)
+    database_player_found.game_played = game_played
+    database_player_found.goals = _get_optional_int_value(cells[21].text)
+    database_player_found.assists = _get_optional_int_value(cells[22].text)
+    database_player_found.points = points
+    database_player_found.points_per_game = points / game_played if game_played is not None and game_played > 0 and points is not None else None
+    database_player_found.goal_against_average = _get_optional_float_value(cells[28].text)
+    database_player_found.save_percentage = _get_optional_float_value(cells[29].text)
 
     players_collection.update_one({'id': database_player_found.id}, {'$set': asdict(database_player_found)}, upsert=True)
 
@@ -153,7 +146,7 @@ def get_puck_pedia_player_info()->PlayerInfo:
 
         match player_name:
             case None:
-                logging.warning(f"{player_name} does not have a valid name, please update the player information manually.")
+                logging.debug(f"{player_name} does not have a valid name, please update the player information manually.")
                 non_matching_players[player_name] = None
                 continue
             case tuple():
@@ -162,10 +155,10 @@ def get_puck_pedia_player_info()->PlayerInfo:
 
                 key_player_name = f"{first_name} {last_name}"
 
-                logging.info(f"{key_player_name} (current contract end season '{contract_expiration_season}')")
+                logging.debug(f"{key_player_name} (current contract end season '{contract_expiration_season}')")
 
                 if contract_expiration_season is None:
-                    logging.warning(f"{key_player_name} have no contract for the beginning of the 2024-25 season")
+                    logging.debug(f"{key_player_name} have no contract for the beginning of the 2024-25 season")
 
                 if EXCEPTION_PLAYERS.get(key_player_name) is not None:
                     database_player_found = find_player_in_database_with_id(players_collection, EXCEPTION_PLAYERS[key_player_name])
