@@ -166,12 +166,12 @@ def get_puck_pedia_player_info()->PlayerInfo:
                     non_matching_players[key_player_name] = EXCEPTION_PLAYERS[key_player_name]
                 else:
                     # Try to find in active players first
-                    database_player_found = find_player_in_database_with_name(players_collection, first_name, last_name, False, non_matching_players, dupplicate_names_players)
+                    database_player_found = find_player_in_database_with_name(players_collection, first_name, last_name, True, non_matching_players, dupplicate_names_players)
                     if database_player_found is not None:
                         update_player_in_database(players_collection, database_player_found, cells, contract_expiration_season)
                     else:
                         # Try to find in inactive players as well
-                        database_player_found = find_player_in_database_with_name(players_collection, first_name, last_name, True, non_matching_players, dupplicate_names_players)
+                        database_player_found = find_player_in_database_with_name(players_collection, first_name, last_name, False, non_matching_players, dupplicate_names_players)
                         if database_player_found is not None:
                             update_player_in_database(players_collection, database_player_found, cells, contract_expiration_season)
 
