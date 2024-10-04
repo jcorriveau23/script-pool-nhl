@@ -5,8 +5,10 @@ import json
 import requests
 from bs4 import BeautifulSoup
 
-from data.players_info import MongoPlayerInfo, PlayerInfo
+from data.players_info import PlayerInfo
 from pymongo import MongoClient
+
+from utils.find_players import find_player_in_database_with_id, find_player_in_database_with_name
 
 LIMIT = 3000
 PUCK_PEDIA_URL = f"https://dashboard.puckpedia.com/?sz={LIMIT}"
@@ -39,49 +41,7 @@ def _get_player_name(puck_pedia_player_name: str)-> tuple[str, str] | None:
 
 
 
-def find_player_in_database_with_name(players_collection: Any, first_name: str, last_name: str, active: bool, non_matching_players: dict[str, int | None], dupplicate_names_players: list[str]) -> PlayerInfo | None:
-    player_name = f"{first_name} {last_name}"
-    query = {"name": {"$regex": player_name, "$options": "i"}, "active": active} 
 
-    results = players_collection.find(query)
-    players = [MongoPlayerInfo(**doc) for doc in results]
-
-    match len(players):
-        case 1:
-            if player_name in non_matching_players:
-                non_matching_players.pop(player_name)
-            return players[0]
-        case 0:
-            # Try to find player only with last name.
-            query = {"name": {"$regex": last_name, "$options": "i"}, "active": active} 
-            results = players_collection.find(query)
-            players = [MongoPlayerInfo(**doc) for doc in results]
-
-            if len(players) == 1:
-                if player_name in non_matching_players:
-                    non_matching_players.pop(player_name)
-                return players[0]
-            
-            logging.warning(f"No player found with name '{player_name}', please update the player information manually.")
-
-            non_matching_players[player_name] = None
-            return None
-        case _:
-            logging.warning(f"{len(players)} players found with with name '{player_name}', please update the player information manually.")
-
-            dupplicate_names_players.append(player_name)
-            return None
-
-def find_player_in_database_with_id(players_collection: Any, player_id: int) -> PlayerInfo:
-    query = {"id": player_id} 
-
-    results = players_collection.find(query)
-    players = [MongoPlayerInfo(**doc) for doc in results]
-
-    if len(players) != 1:
-        raise ValueError(f"only one players should have been found with id {player_id}.")
-    
-    return players[0]
 
 def update_player_in_database(players_collection: Any, database_player_found: PlayerInfo, cells: Any, contract_expiration_season: int | None) -> bool:
     def _get_optional_int_value(string_integer: str)->int | None:
@@ -142,18 +102,16 @@ def get_puck_pedia_player_info()->PlayerInfo:
         cells = row.findAll("td")
 
         player_name = _get_player_name(cells[1].text)
-        print(player_name)
+        first_name, last_name = player_name
+        key_player_name = f"{first_name} {last_name}"
 
         match player_name:
             case None:
                 logging.debug(f"{player_name} does not have a valid name, please update the player information manually.")
-                non_matching_players[player_name] = None
+                non_matching_players[key_player_name] = None
                 continue
             case tuple():
-                first_name, last_name = player_name
                 contract_expiration_season = _get_converted_season(cells[18].text)
-
-                key_player_name = f"{first_name} {last_name}"
 
                 logging.debug(f"{key_player_name} (current contract end season '{contract_expiration_season}')")
 
@@ -164,19 +122,22 @@ def get_puck_pedia_player_info()->PlayerInfo:
                     database_player_found = find_player_in_database_with_id(players_collection, EXCEPTION_PLAYERS[key_player_name])
                     update_player_in_database(players_collection, database_player_found, cells, contract_expiration_season)
                     non_matching_players[key_player_name] = EXCEPTION_PLAYERS[key_player_name]
+                    continue
                 else:
                     # Try to find in active players first
-                    database_player_found = find_player_in_database_with_name(players_collection, first_name, last_name, True, non_matching_players, dupplicate_names_players)
-                    if database_player_found is not None:
-                        update_player_in_database(players_collection, database_player_found, cells, contract_expiration_season)
-                    else:
+                    database_player_found = find_player_in_database_with_name(players_collection, first_name, last_name, True, dupplicate_names_players)
+                    if database_player_found is None:
                         # Try to find in inactive players as well
-                        database_player_found = find_player_in_database_with_name(players_collection, first_name, last_name, False, non_matching_players, dupplicate_names_players)
-                        if database_player_found is not None:
-                            update_player_in_database(players_collection, database_player_found, cells, contract_expiration_season)
+                        database_player_found = find_player_in_database_with_name(players_collection, first_name, last_name, False, dupplicate_names_players)
+
+        if database_player_found is None:
+            non_matching_players[key_player_name] = None
+            continue
+
+        update_player_in_database(players_collection, database_player_found, cells, contract_expiration_season)
 
     logging.warning(f"A total of {len(list(player_name for player_name, player_id in non_matching_players.items() if player_id is None))} was not able to be match")
-    with open("non-matching-players.json", "w") as json_file:
+    with open("non-matching-players-puckpedia.json", "w") as json_file:
         json.dump(non_matching_players, json_file, indent=4) 
 
 

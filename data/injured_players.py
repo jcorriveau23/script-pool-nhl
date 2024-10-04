@@ -1,16 +1,14 @@
-from dataclasses import dataclass
-from enum import StrEnum
+from pydantic import BaseModel
 
 from bson import ObjectId
 
 
-@dataclass
-class InjuredPlayerInfo:
+class InjuredPlayerInfo(BaseModel):
+   name: str
    position: str
    date: str
    type: str
    recovery: str
 
-@dataclass
 class MongoInjuredPlayerInfo(InjuredPlayerInfo):
     _id: ObjectId
