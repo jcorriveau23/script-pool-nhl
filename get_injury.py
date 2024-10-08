@@ -10,7 +10,7 @@ from utils.find_players import find_player_in_database_with_name
 
 API_URL = 'https://www.cbssports.com/nhl/injuries/'
 
-def fetch_injured_players_cbs() -> tuple[dict[int, InjuredPlayerInfo], dict[str, int | None]]:
+def fetch_injured_players_cbs() -> None:
     mongo_client = MongoClient()
     db = mongo_client.hockeypool
     players_collection = db.players
@@ -44,12 +44,8 @@ def fetch_injured_players_cbs() -> tuple[dict[int, InjuredPlayerInfo], dict[str,
             else:
                 logging.warning(f"{player_name} was not found in database.")
                 non_matching_players[player_name] = None
-    
-    return injured_players, non_matching_players
 
-if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    injured_players, non_matching_players = fetch_injured_players_cbs()
 
     # Convert the dataclass instances to dictionaries
     serializable_data = {key: value.model_dump() for key, value in injured_players.items()}

@@ -78,10 +78,8 @@ def fetch_pointers_day(day: date | None = None):
             day = date.today()
 
     day_leaders_data = get_day_leaders_data(day)
-    # played_data = get_played_data(day)
-    TODAY_GAME_END_POINT = f'/v1/score/{day}'
 
-    response = requests.request('GET', API_URL + TODAY_GAME_END_POINT)  # fetch all todays games
+    response = requests.request('GET', f"http://localhost:3000/api/games/{day}")  # fetch all todays games
     today_games = json.loads(response.text)
 
     number_of_games = len(today_games["games"])
@@ -93,7 +91,7 @@ def fetch_pointers_day(day: date | None = None):
         game_id = game['id']
         game_state = game['gameState']
 
-        if game['gameType'] != GameType.PRE_SEASON.value:
+        if game['gameType'] != GameType.REGULAR.value:
             print(f"Skip the game! | Game Type: {game['gameType']}")
             continue
 
@@ -110,7 +108,7 @@ def fetch_pointers_day(day: date | None = None):
         box_score = json.loads(response.text)
 
         shootout_scorer: dict[int, int] | None = None
-        if box_score['gameOutcome'] == "SO":
+        if box_score.get('gameOutcome') == "SO":
             # TODO: Get shootout pointers.
             shootout_scorer: dict[int, int] = {}
             pass
@@ -176,4 +174,4 @@ if __name__ == "__main__":
     #    fetch_pointers_day(start_date)
     #    start_date += delta
     
-    fetch_pointers_day(date(2024, 9, 30))
+    fetch_pointers_day(date(2024, 10, 5))
