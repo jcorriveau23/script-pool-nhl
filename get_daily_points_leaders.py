@@ -95,7 +95,7 @@ def fetch_pointers_day(day: date | None = None):
             print(f"Skip the game! | Game Type: {game['gameType']}")
             continue
 
-        if game_state != "LIVE" and game_state != "OFF" and game_state != "FINAL":
+        if game_state != "LIVE" and game_state != "OFF" and game_state != "FINAL" and game_state != "CRIT":
             print(f"Skip the game! | gameState: {game_state}")
             continue     # fetch the game stats until there is no more update
 
@@ -174,4 +174,4 @@ if __name__ == "__main__":
     #    fetch_pointers_day(start_date)
     #    start_date += delta
     
-    fetch_pointers_day(date(2024, 10, 5))
+    fetch_pointers_day(date(2024, 10, 8))
