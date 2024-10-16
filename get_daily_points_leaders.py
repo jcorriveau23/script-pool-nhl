@@ -109,10 +109,20 @@ def fetch_pointers_day(day: date | None = None):
             box_score = json.loads(response.text)
 
             shootout_scorer: dict[int, int] | None = None
-            if box_score.get('gameOutcome') == "SO":
-                # TODO: Get shootout pointers.
+            if box_score.get('gameOutcome') and box_score['gameOutcome']["lastPeriodType"] == "SO":
                 shootout_scorer: dict[int, int] = {}
-                pass
+                LANDING_END_POINT = f'/v1/gamecenter/{game_id}/landing'
+                response = requests.request('GET', API_URL + LANDING_END_POINT)
+                landing = json.loads(response.text)
+
+                for attempt in landing["summary"]["shootout"]:
+                    if attempt["result"] == "goal":
+                        print(f"{attempt["firstName"]} score in shootout")
+                        # TODO: Get shootout pointers.
+                        if attempt["playerId"] in shootout_scorer:
+                            shootout_scorer[attempt["playerId"]] += 1
+                        else:
+                            shootout_scorer[attempt["playerId"]] = 1
 
             for side in ("awayTeam", "homeTeam"):
                 for player in box_score['playerByGameStats'][side]["forwards"] + box_score['playerByGameStats'][side]["defense"]:
