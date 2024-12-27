@@ -1,6 +1,7 @@
 # This scripts fetch live game data to list the best pointers of the day live.
 # It store the information in the day_leaders collection in the mongoDB database.
 
+from typing import Any
 from pymongo import MongoClient
 from datetime import date, datetime, timedelta
 import requests
@@ -8,6 +9,7 @@ import json
 import logging
 
 from data.daily_leaders import DailyLeaders, GameType, GoalieDailyStats, GoalieStats, MongoDailyLeaders, SkaterStats, SkatersDailyStats
+import utils
 
 # create an client instance of the MongoDB class
 
@@ -69,22 +71,40 @@ def update_goalies_stats(day_leaders_data: DailyLeaders, new_player: GoalieDaily
     
     day_leaders_data.goalies.append(new_player)
 
-def fetch_pointers_day(day: date | None = None):
+def get_goalies_goals_and_assists(goalie_id: int, landing: Any)->tuple[int, int]:
+    """
+    Return the number of goalies goals and assists.
+    These are not provided by the boxscore, but the game landing instead.
+    """
+    goals = 0
+    assists = 0
+
+    for period in landing["summary"]["scoring"]:
+        for g in period["goals"]:
+            if g["playerId"] == goalie_id:
+                logging.info(f"{goalie_id} has a goal !")
+                goals += 1
+
+            for a in g["assists"]:
+                if a["playerId"] == goalie_id:
+                    logging.info(f"{goalie_id} has an assist!")
+                    assists += 1
+
+    return goals, assists
+
+def fetch_pointers_day(date_of_interest: date | None = None):
     try:
         # To make sure that we fetch points of games that finish after 12AM, we fetch previous day before 12PM.
-        if day is None:
-            if datetime.now().hour < 12:
-                day = date.today() - timedelta(days=1)
-            else:
-                day = date.today()
+        if date_of_interest is None:
+            date_of_interest = utils.get_date_of_interest()
 
-        day_leaders_data = get_day_leaders_data(day)
+        day_leaders_data = get_day_leaders_data(date_of_interest)
 
-        response = requests.request('GET', f"http://localhost:3000/api/games/{day}")  # fetch all todays games
+        response = requests.request('GET', f"http://localhost:3000/api/games/{date_of_interest}")  # fetch all todays games
         today_games = json.loads(response.text)
 
         number_of_games = len(today_games["games"])
-        print(f'fetching for: {day}, there is {number_of_games} games')
+        logging.info(f'fetching for: {date_of_interest}, there is {number_of_games} games')
 
         for game in today_games["games"]:
             winning_goalie = None
@@ -93,27 +113,27 @@ def fetch_pointers_day(day: date | None = None):
             game_state = game['gameState']
 
             if game['gameType'] != GameType.REGULAR.value:
-                print(f"Skip the game! | Game Type: {game['gameType']}")
+                logging.info(f"Skip the game! | Game Type: {game['gameType']}")
                 continue
 
             if game_state != "LIVE" and game_state != "OFF" and game_state != "FINAL" and game_state != "CRIT":
-                print(f"Skip the game! | gameState: {game_state}")
+                logging.info(f"Skip the game! | gameState: {game_state}")
                 continue     # fetch the game stats until there is no more update
 
             if game_id in fetch_pointers_day.end_games:
-                print(f"Skip the game! | Game Ended: {game_id}")
+                logging.info(f"Skip the game! | Game Ended: {game_id}")
                 continue
 
-            BOX_SCORE_END_POINT = f'/v1/gamecenter/{game_id}/boxscore'
-            response = requests.request('GET', API_URL + BOX_SCORE_END_POINT)
+            # Fetch the game boxscore and landing to be able to find every game information data.
+            response = requests.request('GET', f'http://localhost:3000/api/game/{game_id}/boxscore')
             box_score = json.loads(response.text)
+
+            response = requests.request('GET', f'http://localhost:3000/api/game/{game_id}/landing')
+            landing = json.loads(response.text)
 
             shootout_scorer: dict[int, int] | None = None
             if box_score.get('gameOutcome') and box_score['gameOutcome']["lastPeriodType"] == "SO":
                 shootout_scorer: dict[int, int] = {}
-                LANDING_END_POINT = f'/v1/gamecenter/{game_id}/landing'
-                response = requests.request('GET', API_URL + LANDING_END_POINT)
-                landing = json.loads(response.text)
 
                 for attempt in landing["summary"]["shootout"]:
                     if attempt["result"] == "goal":
@@ -131,7 +151,7 @@ def fetch_pointers_day(day: date | None = None):
                         player_name = player['name']['default']
                         player_pts = player['goals'] + player['assists'] + shootoutGoals
 
-                        print(f'{player_name} | {player_pts} pts')
+                        logging.debug(f'{player_name} | {player_pts} pts')
 
                         update_skaters_stats(
                             day_leaders_data, 
@@ -154,14 +174,16 @@ def fetch_pointers_day(day: date | None = None):
                     if goalie.get('toi', "00:00") != '00:00':
                         player_name = goalie['name']['default']
 
-                        print(f'{player_name} | goalies')
+                        logging.debug(f'{player_name} | goalies')
+
+                        goals, assists = get_goalies_goals_and_assists(goalie['playerId'], landing)
 
                         update_goalies_stats(
                             day_leaders_data, GoalieDailyStats(
                                 name=player_name,
                                 id = goalie['playerId'],
                                 team=box_score[side]['id'],
-                                stats=GoalieStats(goals=goalie.get("goals", 0), assists=goalie.get("assists", 0), savePercentage=float(goalie.get("savePctg", "0.0")), decision=goalie.get("decision"))
+                                stats=GoalieStats(goals=goals, assists=assists, starter=goalie.get("starter", False), savePercentage=float(goalie.get("savePctg", "0.0")), decision=goalie.get("decision"))
                             )
                         )
 
@@ -171,7 +193,7 @@ def fetch_pointers_day(day: date | None = None):
             if winning_goalie:              
                 fetch_pointers_day.end_games.append(game_id)
                             
-        day_leaders.update_one({'date': str(day)}, {'$set': day_leaders_data.model_dump()}, upsert=True)
+        day_leaders.update_one({'date': str(date_of_interest)}, {'$set': day_leaders_data.model_dump()}, upsert=True)
     except Exception as e:
         logging.error(str(e))
 
@@ -179,12 +201,12 @@ def fetch_pointers_day(day: date | None = None):
 fetch_pointers_day.end_games = []
 
 if __name__ == "__main__":
-    # start_date = date(2023,11,7)
-    # end_date = date(2023,11,9)
-    # delta = timedelta(days=1)
-    # while start_date <= end_date:
-    #    print(start_date)
-    #    fetch_pointers_day(start_date)
-    #    start_date += delta
+    start_date = date(2024, 10, 4)
+    end_date = date.today()
+    delta = timedelta(days=1)
+    while start_date <= end_date:
+       print(start_date)
+       fetch_pointers_day(start_date)
+       start_date += delta
     
-    fetch_pointers_day(date(2024, 10, 12))
+    # fetch_pointers_day(date(2024, 10, 15))
