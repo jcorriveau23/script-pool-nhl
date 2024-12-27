@@ -7,6 +7,8 @@ from cumulate_pool_stats import lock_daily_roster, cumulate_daily_roster_pts
 from get_daily_points_leaders import fetch_pointers_day
 from get_injury import fetch_injured_players_cbs
 
+logging.basicConfig(level=logging.INFO)
+
 # Task scheduling
 # After every 3mins get_live_day_points_leaders() is called.
 schedule.every(3).minutes.do(fetch_pointers_day)
