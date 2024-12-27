@@ -1,9 +1,10 @@
 # this script will go through each pool in the database and cumulate the points of the players if it is not in the reservist. 
 
 from pymongo import MongoClient
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 from data.constant import CURRENT_SEASON
+import utils
 
 # create an client instance of the MongoDB class
 
@@ -39,27 +40,26 @@ def get_goalies_stats(id, today_pointers):
                 "G": goalie["stats"]["goals"], 
                 "A": goalie["stats"]["assists"], 
                 "W": "decision" in goalie["stats"] and goalie["stats"]["decision"] == "W", 
-                "SO": round(goalie["stats"]["savePercentage"], 3) == 1.000 and "decision" in goalie["stats"] and goalie["stats"]["decision"] == "W",
+                "SO": goalie["stats"]["starter"] == True and round(goalie["stats"]["savePercentage"], 3) == 1.000 and "decision" in goalie["stats"] and goalie["stats"]["decision"] == "W",
                 "OT": "decision" in goalie["stats"] and goalie["stats"]["decision"] == "O", 
             }
 
 def get_db_infos(day):
     return db.day_leaders.find_one({"date": str(day)})
 
-def cumulate_daily_roster_pts(day = None):
+def cumulate_daily_roster_pts(date_of_interest: date | None = None):
     """
     This function cumulate the daily roster points in the pool.
     This is being ran once a day to update pool database.
     """
-    if day is None: # If no time was provided, use the current time.
-        day = date.today()
-        if datetime.now().hour < 12:    # Before 12h AM, fetch the data from yesterday in the case a game was completed after 12h PM.
-            day -= timedelta(days=1)
 
-    today_pointers = get_db_infos(day)
+    if date_of_interest is None:
+        date_of_interest = utils.get_date_of_interest()
+
+    today_pointers = get_db_infos(date_of_interest)
 
     if today_pointers is None:
-       print(f"There is no data available for the {str(day)}, no db update will be applied this itteration!")
+       print(f"There is no data available for the {str(date_of_interest)}, no db update will be applied this itteration!")
        return
 
     if cumulate_daily_roster_pts.last_today_pointers == today_pointers:
@@ -75,7 +75,7 @@ def cumulate_daily_roster_pts(day = None):
         if pool["season"] != CURRENT_SEASON:
             continue
 
-        score_by_day = pool["context"]["score_by_day"][str(day)]
+        score_by_day = pool["context"]["score_by_day"][str(date_of_interest)]
 
         for participant in pool["participants"]:
             participant_id = participant["id"]
@@ -89,7 +89,7 @@ def cumulate_daily_roster_pts(day = None):
                     past_assists = score_by_day[participant_id]["roster"]["F"][key_forward].get("A")
                     new_goals = score_by_day[participant_id]["roster"]["F"][key_forward]["G"]
                     new_assists = score_by_day[participant_id]["roster"]["F"][key_forward]["A"]
-                    print(f"Date: {str(day)}, fix: {name}, G: {past_goals} -> {new_goals}, A: {past_assists} -> {new_assists}")
+                    print(f"Date: {str(date_of_interest)}, fix: {name}, G: {past_goals} -> {new_goals}, A: {past_assists} -> {new_assists}")
                 score_by_day[participant_id]["roster"]["F"][key_forward] = player_stats
 
 
@@ -104,7 +104,7 @@ def cumulate_daily_roster_pts(day = None):
                     past_assists = score_by_day[participant_id]["roster"]["D"][key_defender].get("A")
                     new_goals = score_by_day[participant_id]["roster"]["D"][key_defender]["G"]
                     new_assists = score_by_day[participant_id]["roster"]["D"][key_defender]["A"]
-                    print(f"Date: {str(day)}, fix: {name}, G: {past_goals} -> {new_goals}, A: {past_assists} -> {new_assists}")
+                    print(f"Date: {str(date_of_interest)}, fix: {name}, G: {past_goals} -> {new_goals}, A: {past_assists} -> {new_assists}")
 
                 score_by_day[participant_id]["roster"]["D"][key_defender] = player_stats
                     
@@ -115,7 +115,7 @@ def cumulate_daily_roster_pts(day = None):
             # Set the is_cumulated value to True so that we know the points has been cumulated.
             score_by_day[participant_id]["is_cumulated"] = True
 
-        db.pools.update_one({"name": pool["name"]}, {"$set": {f"context.score_by_day.{str(day)}": score_by_day}}, upsert=True)
+        db.pools.update_one({"name": pool["name"]}, {"$set": {f"context.score_by_day.{str(date_of_interest)}": score_by_day}}, upsert=True)
 
 cumulate_daily_roster_pts.last_today_pointers = {}
 cumulate_daily_roster_pts.last_played = {}
@@ -168,14 +168,14 @@ def lock_daily_roster(day = None):
 
 
 if __name__ == "__main__":
-    # start_date = date(2023, 10, 10)     # beginning of the 2021-2022 season
-    # end_date = date(2023, 10, 27)
-    # delta = timedelta(days=1)
-    # while start_date <= end_date:
-    #    print(start_date)
-    #    lock_daily_roster(start_date)
-    #    cumulate_daily_roster_pts(start_date)
-    #    start_date += delta
+    start_date = date(2024, 10, 4)
+    end_date = date.today()
+    delta = timedelta(days=1)
+    while start_date <= end_date:
+       print(start_date)
+       # lock_daily_roster(start_date)
+       cumulate_daily_roster_pts(start_date)
+       start_date += delta
 
-    lock_daily_roster(date(2024, 10, 5))
-    cumulate_daily_roster_pts(date(2024, 10, 5))
+    # lock_daily_roster(date(2024, 12, 22))
+    # cumulate_daily_roster_pts(date(2024, 12, 22))
