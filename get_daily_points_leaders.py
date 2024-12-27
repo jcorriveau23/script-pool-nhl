@@ -9,7 +9,7 @@ import json
 import logging
 
 from data.daily_leaders import DailyLeaders, GameType, GoalieDailyStats, GoalieStats, MongoDailyLeaders, SkaterStats, SkatersDailyStats
-import utils
+from utils.date import get_date_of_interest
 
 # create an client instance of the MongoDB class
 
@@ -96,7 +96,7 @@ def fetch_pointers_day(date_of_interest: date | None = None):
     try:
         # To make sure that we fetch points of games that finish after 12AM, we fetch previous day before 12PM.
         if date_of_interest is None:
-            date_of_interest = utils.get_date_of_interest()
+            date_of_interest = get_date_of_interest()
 
         day_leaders_data = get_day_leaders_data(date_of_interest)
 

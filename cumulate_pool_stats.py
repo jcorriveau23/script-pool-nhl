@@ -4,7 +4,7 @@ from pymongo import MongoClient
 from datetime import date, timedelta
 
 from data.constant import CURRENT_SEASON
-import utils
+from utils.date import get_date_of_interest
 
 # create an client instance of the MongoDB class
 
@@ -54,7 +54,7 @@ def cumulate_daily_roster_pts(date_of_interest: date | None = None):
     """
 
     if date_of_interest is None:
-        date_of_interest = utils.get_date_of_interest()
+        date_of_interest = get_date_of_interest()
 
     today_pointers = get_db_infos(date_of_interest)
 
