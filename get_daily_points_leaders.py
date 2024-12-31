@@ -64,8 +64,10 @@ def update_goalies_stats(day_leaders_data: DailyLeaders, new_player: GoalieDaily
             new_assists = new_player.stats.assists
             past_decision = old_player.stats.decision
             new_decision = new_player.stats.decision
-            if past_goals != new_goals or past_assists != new_assists or past_decision != new_decision:
-                logging.info(f"Date: {day_leaders_data.date}, fix: {new_player.name}, G: {past_goals} -> {new_goals}, A: {past_assists} -> {new_assists}, Decision: {past_decision} -> {new_decision}")
+            past_starter = old_player.stats.starter
+            new_starter = new_player.stats.starter
+            if past_goals != new_goals or past_assists != new_assists or past_decision != new_decision or past_starter != new_starter:
+                logging.info(f"Date: {day_leaders_data.date}, fix: {new_player.name}, G: {past_goals} -> {new_goals}, A: {past_assists} -> {new_assists}, Decision: {past_decision} -> {new_decision}, Starter: {past_starter} -> {new_starter}")
                 old_player.stats = new_player.stats
             return
     
