@@ -1,16 +1,19 @@
-LIMIT = 3000
+LIMIT = 300000
 ACTIVE = True
 
 import requests
 import logging
-from data import players_info
 import json 
 from pymongo import MongoClient
 from dataclasses import asdict
 
+import sys, os
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+
+from data import players_info
+
 URL = f"https://search.d3.nhle.com/api/v1/search/player?culture=en-us&limit={LIMIT}&q=*&active={ACTIVE}"
 
-active_players = json.loads(requests.get(URL).text)
 def _get_position_code(position: str) -> players_info.Position:
     match position:
         case "R" | "L" | "C":
@@ -66,6 +69,10 @@ def get_active_players() -> None:
                 points_per_game=None,
                 goal_against_average=None,
                 save_percentage=None,
+                wins=None,
+                ot=None,
+                saves=None,
+                shots=None,
             )
             logging.warning(f"Added {stored_player_info.name} to the database.")
         elif _player_info_changed(players[0], nhl_player):
@@ -85,6 +92,10 @@ def get_active_players() -> None:
                 points_per_game=players[0].get("points_per_game"),
                 goal_against_average=players[0].get("goal_against_average"),
                 save_percentage=players[0].get("save_percentage"),
+                wins=players[0].get("wins"),
+                ot=players[0].get("ot"),
+                saves=players[0].get("saves"),
+                shots=players[0].get("shots"),
             )
             logging.warning(f"{nhl_player["name"]} info updated.")
         else:

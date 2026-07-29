@@ -5,10 +5,15 @@ from pymongo import MongoClient
 import requests
 import logging
 from bs4 import BeautifulSoup
+
+import sys, os
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from data.injured_players import InjuredPlayerInfo
 from utils.find_players import find_player_in_database_with_name
 
 API_URL = 'https://www.cbssports.com/nhl/injuries/'
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 def fetch_injured_players_cbs() -> None:
     try:
@@ -30,7 +35,7 @@ def fetch_injured_players_cbs() -> None:
 
                 player_name: str = player.find_all("a")[1].text.strip()
                 logging.info(f"{player_name} is currently injured.")
-                first_name, last_name = player_name.split(" ")
+                first_name, last_name = player_name.split(" ", 1)
 
                 player_found = find_player_in_database_with_name(players_collection, first_name, last_name, True, dupplicate_names_players)
 
@@ -46,7 +51,6 @@ def fetch_injured_players_cbs() -> None:
                     logging.warning(f"{player_name} was not found in database.")
                     non_matching_players[player_name] = None
 
-        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
         # Convert the dataclass instances to dictionaries
         serializable_data = {key: value.model_dump() for key, value in injured_players.items()}
@@ -59,3 +63,6 @@ def fetch_injured_players_cbs() -> None:
             json.dump(non_matching_players, json_file, indent=4)
     except Exception as e:
         logging.error(str(e))
+
+if __name__ == "__main__":
+    fetch_injured_players_cbs()

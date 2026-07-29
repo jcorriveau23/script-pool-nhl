@@ -22,7 +22,7 @@ class PlayerInfo:
     # Including the selected season (i.e., if 20232024 is stored, the contract is valid for the 2023-24 season)
     contract_expiration_season: int | None
 
-    # The score made by the player (returned from puckpedia)
+    # stats
     game_played: int | None
     goals: int | None
     assists: int | None
@@ -30,6 +30,10 @@ class PlayerInfo:
     points_per_game: float | None
     goal_against_average: float | None
     save_percentage: float | None
+    saves: int | None
+    shots: int | None
+    wins: int | None
+    ot: int | None
 
 @dataclass
 class MongoPlayerInfo(PlayerInfo):

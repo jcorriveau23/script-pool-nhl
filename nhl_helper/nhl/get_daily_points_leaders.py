@@ -8,6 +8,8 @@ import requests
 import json
 import logging
 
+import sys, os
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from data.daily_leaders import DailyLeaders, GameType, GoalieDailyStats, GoalieStats, MongoDailyLeaders, SkaterStats, SkatersDailyStats
 from utils.date import get_date_of_interest
 
@@ -66,7 +68,11 @@ def update_goalies_stats(day_leaders_data: DailyLeaders, new_player: GoalieDaily
             new_decision = new_player.stats.decision
             past_starter = old_player.stats.starter
             new_starter = new_player.stats.starter
-            if past_goals != new_goals or past_assists != new_assists or past_decision != new_decision or past_starter != new_starter:
+            past_shots = old_player.stats.shots
+            new_shots = new_player.stats.shots
+            past_saves = old_player.stats.saves
+            new_saves = new_player.stats.saves
+            if past_goals != new_goals or past_assists != new_assists or past_decision != new_decision or past_starter != new_starter or past_shots != new_shots or past_saves != new_saves :
                 logging.info(f"Date: {day_leaders_data.date}, fix: {new_player.name}, G: {past_goals} -> {new_goals}, A: {past_assists} -> {new_assists}, Decision: {past_decision} -> {new_decision}, Starter: {past_starter} -> {new_starter}")
                 old_player.stats = new_player.stats
             return
@@ -137,9 +143,9 @@ def fetch_pointers_day(date_of_interest: date | None = None):
             if box_score.get('gameOutcome') and box_score['gameOutcome']["lastPeriodType"] == "SO":
                 shootout_scorer: dict[int, int] = {}
 
-                for attempt in landing["summary"]["shootout"]:
-                    if attempt["result"] == "goal":
-                        print(f"{attempt["firstName"]} score in shootout")
+                for attempt in landing["summary"]["shootout"]["events"]:
+                    if isinstance(attempt, dict) and attempt.get("result") == "goal":
+                        print(f"{attempt['firstName']} score in shootout")
                         # TODO: Get shootout pointers.
                         if attempt["playerId"] in shootout_scorer:
                             shootout_scorer[attempt["playerId"]] += 1
@@ -185,7 +191,13 @@ def fetch_pointers_day(date_of_interest: date | None = None):
                                 name=player_name,
                                 id = goalie['playerId'],
                                 team=box_score[side]['id'],
-                                stats=GoalieStats(goals=goals, assists=assists, starter=goalie.get("starter", False), savePercentage=float(goalie.get("savePctg", "0.0")), decision=goalie.get("decision"))
+                                stats=GoalieStats(goals=goals, 
+                                                  assists=assists, 
+                                                  starter=goalie.get("starter", False), 
+                                                  shots=goalie.get("shotsAgainst", 0),
+                                                  saves=goalie.get("saves", 0),
+                                                  savePercentage=float(goalie.get("savePctg", "0.0")), 
+                                                  decision=goalie.get("decision"))
                             )
                         )
 
@@ -204,11 +216,9 @@ fetch_pointers_day.end_games = []
 
 if __name__ == "__main__":
     start_date = date(2024, 10, 4)
-    end_date = date.today()
+    end_date = date(2025, 4, 17)
     delta = timedelta(days=1)
     while start_date <= end_date:
        print(start_date)
        fetch_pointers_day(start_date)
        start_date += delta
-    
-    # fetch_pointers_day(date(2024, 10, 15))

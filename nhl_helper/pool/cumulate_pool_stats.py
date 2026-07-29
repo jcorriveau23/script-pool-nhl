@@ -3,6 +3,8 @@
 from pymongo import MongoClient
 from datetime import date, timedelta
 
+import sys, os
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from data.constant import CURRENT_SEASON
 from utils.date import get_date_of_interest
 
@@ -74,7 +76,9 @@ def cumulate_daily_roster_pts(date_of_interest: date | None = None):
 
         if pool["season"] != CURRENT_SEASON:
             continue
-
+        
+        print(date_of_interest)
+        print(pool["name"])
         score_by_day = pool["context"]["score_by_day"][str(date_of_interest)]
 
         for participant in pool["participants"]:
@@ -168,14 +172,14 @@ def lock_daily_roster(day = None):
 
 
 if __name__ == "__main__":
-    start_date = date(2024, 10, 4)
-    end_date = date.today()
-    delta = timedelta(days=1)
-    while start_date <= end_date:
-       print(start_date)
-       # lock_daily_roster(start_date)
-       cumulate_daily_roster_pts(start_date)
-       start_date += delta
+    # start_date = START_SEASON_DATE
+    # end_date = date.today()
+    # delta = timedelta(days=1)
+    # while start_date <= end_date:
+    #    print(start_date)
+    #    # lock_daily_roster(start_date)
+    #    cumulate_daily_roster_pts(start_date)
+    #    start_date += delta
 
-    # lock_daily_roster(date(2024, 12, 22))
-    # cumulate_daily_roster_pts(date(2024, 12, 22))
+    lock_daily_roster(date(2024, 12, 30))
+    cumulate_daily_roster_pts(date(2024, 12, 30))

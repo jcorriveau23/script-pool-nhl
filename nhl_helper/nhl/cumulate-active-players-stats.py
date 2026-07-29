@@ -1,11 +1,10 @@
-
-
-
-
 from dataclasses import asdict, dataclass
 from pymongo import MongoClient
-from constant import END_SEASON_DATE, START_SEASON_DATE
 import datetime
+
+import sys, os
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from data.constant import END_SEASON_DATE, START_SEASON_DATE, LAST_START_SEASON_DATE, LAST_END_SEASON_DATE
 
 from data.daily_leaders import Decision, MongoDailyLeaders
 
@@ -15,6 +14,7 @@ db = mo_c.hockeypool
 
 @dataclass
 class SkaterStats:
+    active: bool
     game_played: int
     goals: int
     assists: int
@@ -24,20 +24,25 @@ class SkaterStats:
     
 @dataclass
 class GoalieStats:
+    active: bool
     game_played: int
     wins: int
     ot: int
+    shots: int
+    saves: int
+    goal_against_average: float
+    save_percentage: float
 
 def parse_all_season_players_stats() -> dict[str, SkaterStats | GoalieStats]:
     player_stats: dict[int, SkaterStats | GoalieStats] = {}
 
-    start_date = START_SEASON_DATE
-    end_date = END_SEASON_DATE
+    start_date = LAST_START_SEASON_DATE
+    end_date = LAST_END_SEASON_DATE
     delta = datetime.timedelta(days=1)
     number_of_games_per_player: dict[int, int] = {}
 
     while start_date <= end_date:
-
+        print(f"Processing date: {start_date}")
         # TODO: Get the daily leaders from database on that specific dates continue if there is no data for a specific date.
         doc = db.day_leaders.find_one({"date": str(start_date)})
 
@@ -54,7 +59,7 @@ def parse_all_season_players_stats() -> dict[str, SkaterStats | GoalieStats]:
         
         for player in today_pointers.skaters:
             if player.id not in player_stats:
-                player_stats[player.id] = SkaterStats(game_played=number_of_games_per_player[player.id], goals=player.stats.goals, assists=player.stats.assists, points=player.stats.goals + player.stats.assists, points_per_game=0)
+                player_stats[player.id] = SkaterStats(active=True, game_played=number_of_games_per_player[player.id], goals=player.stats.goals, assists=player.stats.assists, points=player.stats.goals + player.stats.assists, points_per_game=0)
             else:
                 player_stats[player.id].game_played = number_of_games_per_player[player.id]
                 player_stats[player.id].goals += player.stats.goals
@@ -64,12 +69,26 @@ def parse_all_season_players_stats() -> dict[str, SkaterStats | GoalieStats]:
                 
 
         for player in today_pointers.goalies:
+            goal_against_average =  player.stats.shots - player.stats.saves
+            save_percentage = player.stats.saves / (player.stats.shots or 1)
             if player.id not in player_stats:
-                player_stats[player.id] = GoalieStats(game_played=number_of_games_per_player[player.id], wins=1 if player.stats.decision == Decision.W else 0, ot=1 if player.stats.decision == Decision.O else 0)
+                player_stats[player.id] = GoalieStats(active=True, 
+                                                      game_played=number_of_games_per_player[player.id], 
+                                                      wins=1 if player.stats.decision == Decision.W else 0, 
+                                                      ot=1 if player.stats.decision == Decision.O else 0, 
+                                                      shots=player.stats.shots, 
+                                                      saves=player.stats.saves, 
+                                                      goal_against_average=goal_against_average, 
+                                                      save_percentage=save_percentage)
             else:
                 player_stats[player.id].game_played = number_of_games_per_player[player.id]
                 player_stats[player.id].wins += 1 if player.stats.decision == Decision.W else 0
                 player_stats[player.id].ot += 1 if player.stats.decision == Decision.O else 0
+                player_stats[player.id].shots += player.stats.shots 
+                player_stats[player.id].saves += player.stats.saves
+                player_stats[player.id].save_percentage = player_stats[player.id].saves / (player_stats[player.id].shots or 1)
+                player_stats[player.id].goal_against_average = (player_stats[player.id].shots - player_stats[player.id].saves) / number_of_games_per_player[player.id]
+
 
         start_date += delta
     
@@ -84,7 +103,11 @@ def erase_player_stats()-> None:
         "goals": None,
         "points": None,
         "points_per_game": None,
-        "save_percentage": None
+        "save_percentage": None,
+        "wins": None,
+        "ot": None,
+        "saves": None,
+        "shots": None
     }
 
     # Update all documents
@@ -98,5 +121,8 @@ def update_player_stats(player_stats: dict[int, SkaterStats | GoalieStats]) -> N
 erase_player_stats()
 
 player_stats = parse_all_season_players_stats()
+print(player_stats)
+print(len(player_stats.keys()))
+
 
 update_player_stats(player_stats)

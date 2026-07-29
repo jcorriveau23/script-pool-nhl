@@ -16,6 +16,8 @@ class SkaterStats(BaseModel):
 class GoalieStats(BaseModel):
    goals: int
    assists: int
+   shots: int
+   saves: int
    savePercentage: float
    starter: bool
    decision: Decision | None

@@ -3,23 +3,29 @@ from data.players_info import MongoPlayerInfo, PlayerInfo
 import logging
 
 
-def find_player_in_database_with_id(players_collection: Any, player_id: int) -> PlayerInfo:
+def find_player_in_database_with_id(players_collection: Any, player_id: int) -> MongoPlayerInfo:
     query = {"id": player_id} 
 
     results = players_collection.find(query)
     players = [MongoPlayerInfo(**doc) for doc in results]
 
+    if len(players) == 0:
+        raise ValueError(f"No player found with id '{player_id}'.")
+
     if len(players) != 1:
-        raise ValueError(f"only one players should have been found with id {player_id}.")
+        raise ValueError(f"Only one player should have been found with id '{player_id}'.")
     
     return players[0]
 
 
 
 
-def find_player_in_database_with_name(players_collection: Any, first_name: str, last_name: str, active: bool, dupplicate_names_players: list[str]) -> PlayerInfo | None:
+def find_player_in_database_with_name(players_collection: Any, first_name: str, last_name: str, active: bool | None, dupplicate_names_players: list[str]) -> MongoPlayerInfo | None:
     player_name = f"{first_name} {last_name}"
-    query = {"name": {"$regex": player_name, "$options": "i"}, "active": active} 
+    query = {"name": {"$regex": player_name, "$options": "i"}}
+    if active is not None:
+        query["active"] = active
+
 
     results = players_collection.find(query)
     players = [MongoPlayerInfo(**doc) for doc in results]

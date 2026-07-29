@@ -3,9 +3,9 @@ import time
 import schedule
 import logging
 
-from cumulate_pool_stats import lock_daily_roster, cumulate_daily_roster_pts
-from get_daily_points_leaders import fetch_pointers_day
-from get_injury import fetch_injured_players_cbs
+from pool.cumulate_pool_stats import lock_daily_roster, cumulate_daily_roster_pts
+from nhl.get_daily_points_leaders import fetch_pointers_day
+from nhl.get_injury import fetch_injured_players_cbs
 
 logging.basicConfig(level=logging.INFO)
 
