@@ -1,3 +1,13 @@
-injured_players.json
+__pycache__/
 *.pyc
 *.html
+.env
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Job outputs
+injured_players.json
+injured-players.json
+non-matching-players-cbs.json

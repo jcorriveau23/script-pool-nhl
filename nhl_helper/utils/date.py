@@ -1,7 +1,7 @@
-from datetime import datetime, date, timedelta
+from datetime import date, datetime, timedelta
 
 
-def get_date_of_interest()->datetime.date:
+def get_date_of_interest() -> date:
     """
     The date of interest by default is the current date minus after 12PM or yesterday before 12PM.
     """
