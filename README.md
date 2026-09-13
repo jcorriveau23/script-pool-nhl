@@ -106,10 +106,24 @@ time.
 ## Development
 
 ```bash
-uv run ruff check .   # lint
-uv run mypy           # type check
-uv run pytest         # tests
+uv run ruff check .          # lint
+uv run mypy                  # type check
+uv run pytest                # tests
+uv run pytest --cov          # tests with a coverage report
 ```
 
 Tests cover the pure parsing and accumulation logic and need neither a network
 connection nor a database.
+
+Coverage is measured over `nhl_helper` with branch coverage on, minus the two
+jobs that are only database and file wiring (`get_injury`,
+`update_pool_players_info`). `fail_under` in [pyproject.toml](pyproject.toml) is
+a floor that keeps a change from dropping what is already covered — raise it
+when coverage genuinely rises. `--cov` is not on by default so that running a
+single test file stays quick and cannot trip the threshold.
+
+[CI](.github/workflows/ci.yml) runs those same commands on every pull request,
+and separately builds the Docker image and smoke-tests it: a bare run exits 64,
+every `nhl-*` command is on `PATH`, every job module imports, and the container
+runs as `appuser`. That build is amd64 only — the release workflow is what
+builds and publishes arm64 on a native runner.
