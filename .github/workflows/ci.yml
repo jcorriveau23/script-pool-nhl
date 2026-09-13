@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Type check
+        run: uv run mypy
+
+      # fail_under lives in pyproject.toml, so the threshold is the same here as
+      # it is locally.
+      - name: Test
+        run: uv run pytest --cov --cov-report=term-missing --cov-report=xml
+
+      # Runs even when the threshold was missed: the table is what says which
+      # module dropped.
+      - name: Coverage summary
+        if: always()
+        run: |
+          {
+            echo '## Coverage'
+            echo
+            uv run coverage report --format=markdown --fail-under=0
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.xml
+          if-no-files-found: error
+          retention-days: 7
+
+  # The release workflow is the first place the image is built today, which makes
+  # a broken Dockerfile a failed release rather than a failed PR. This builds the
+  # same image on every change and checks it actually runs.
+  docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # amd64 only: this is a build check, and the release workflow is what
+      # validates arm64 on a native runner. Its cache scopes are per-platform, so
+      # a separate scope here keeps the two from evicting each other.
+      - name: Build image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: nhl-helper:ci
+          cache-from: type=gha,scope=ci
+          cache-to: type=gha,mode=max,scope=ci
+
+      - name: Smoke test the image
+        run: |
+          set -euo pipefail
+
+          # A bare run has no job to do and must say which one is missing.
+          status=0
+          docker run --rm nhl-helper:ci || status=$?
+          if [ "$status" -ne 64 ]; then
+            echo "expected exit 64 from a bare run, got $status" >&2
+            exit 1
+          fi
+
+          # Every console script is on PATH — a rename in pyproject.toml that the
+          # systemd units do not know about fails here instead of at 05:00.
+          docker run --rm nhl-helper:ci sh -c 'set -e
+          for job in nhl-daily-leaders nhl-injuries nhl-active-players \
+                     nhl-contracts nhl-cumulate-stats nhl-update-pool-players; do
+            command -v "$job"
+          done'
+
+          # Importing every job is what proves the runtime stage carries working
+          # lxml, bs4 and pymongo, which the builder stage alone would not show.
+          docker run --rm nhl-helper:ci python -c '
+          import nhl_helper.nhl.cumulate_active_players_stats
+          import nhl_helper.nhl.get_active_contract_info
+          import nhl_helper.nhl.get_active_players
+          import nhl_helper.nhl.get_daily_points_leaders
+          import nhl_helper.nhl.get_injury
+          import nhl_helper.pool.update_pool_players_info
+          '
+
+          # Argument parsing runs without a database or a network.
+          docker run --rm nhl-helper:ci nhl-daily-leaders --help
+
+          # The image must not run as root.
+          user=$(docker run --rm nhl-helper:ci whoami)
+          if [ "$user" != "appuser" ]; then
+            echo "expected the container to run as appuser, got $user" >&2
+            exit 1
+          fi

@@ -1,100 +1,109 @@
-from dataclasses import asdict, dataclass
-from pymongo import MongoClient
+"""
+Rebuild every player's season totals in `db.players` from the daily leaders.
+
+The job accumulates raw counting stats first and derives the averages once at
+the end, so a player who only appears on a single day gets the same treatment as
+one who appears every night.
+"""
+
 import datetime
+import logging
 
-import sys, os
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from data.constant import END_SEASON_DATE, START_SEASON_DATE, LAST_START_SEASON_DATE, LAST_END_SEASON_DATE
+from pydantic import BaseModel
 
-from data.daily_leaders import Decision, MongoDailyLeaders
-
-mo_c = MongoClient()
-db = mo_c.hockeypool
+from nhl_helper.data.daily_leaders import Decision, MongoDailyLeaders
+from nhl_helper.db import get_database
+from nhl_helper.season import SeasonInfo, get_season_info
 
 
-@dataclass
-class SkaterStats:
-    active: bool
-    game_played: int
-    goals: int
-    assists: int
-    points: int
-    points_per_game: int
+class SkaterStats(BaseModel):
+    active: bool = True
+    game_played: int = 0
+    goals: int = 0
+    assists: int = 0
+    points: int = 0
+    points_per_game: float = 0.0
 
-    
-@dataclass
-class GoalieStats:
-    active: bool
-    game_played: int
-    wins: int
-    ot: int
-    shots: int
-    saves: int
-    goal_against_average: float
-    save_percentage: float
 
-def parse_all_season_players_stats() -> dict[str, SkaterStats | GoalieStats]:
-    player_stats: dict[int, SkaterStats | GoalieStats] = {}
+class GoalieStats(BaseModel):
+    active: bool = True
+    game_played: int = 0
+    wins: int = 0
+    ot: int = 0
+    shots: int = 0
+    saves: int = 0
+    goal_against_average: float = 0.0
+    save_percentage: float = 0.0
 
-    start_date = LAST_START_SEASON_DATE
-    end_date = LAST_END_SEASON_DATE
+
+class SeasonStats(BaseModel):
+    skaters: dict[int, SkaterStats] = {}
+    goalies: dict[int, GoalieStats] = {}
+
+    def finalize(self, games_played: dict[int, int]) -> None:
+        """
+        Apply games played and derive every average, for first-timers included.
+        """
+        for player_id, skater in self.skaters.items():
+            skater.game_played = games_played.get(player_id, 0)
+            skater.points_per_game = round(skater.points / skater.game_played, 4) if skater.game_played else 0.0
+
+        for player_id, goalie in self.goalies.items():
+            goalie.game_played = games_played.get(player_id, 0)
+            goalie.save_percentage = round(goalie.saves / goalie.shots, 4) if goalie.shots else 0.0
+            goals_against = goalie.shots - goalie.saves
+            goalie.goal_against_average = (
+                round(goals_against / goalie.game_played, 4) if goalie.game_played else 0.0
+            )
+
+    def as_documents(self) -> dict[int, dict]:
+        return {player_id: stats.model_dump() for player_id, stats in (self.skaters | self.goalies).items()}
+
+
+def accumulate_day(stats: SeasonStats, games_played: dict[int, int], day: MongoDailyLeaders) -> None:
+    """
+    Fold a single day of leaders into the running totals.
+    """
+    for player_id in day.played:
+        games_played[player_id] = games_played.get(player_id, 0) + 1
+
+    for player in day.skaters:
+        skater = stats.skaters.setdefault(player.id, SkaterStats())
+        skater.goals += player.stats.goals
+        skater.assists += player.stats.assists
+        skater.points += player.stats.goals + player.stats.assists
+
+    for goalie_of_day in day.goalies:
+        goalie = stats.goalies.setdefault(goalie_of_day.id, GoalieStats())
+        goalie.wins += 1 if goalie_of_day.stats.decision == Decision.W else 0
+        goalie.ot += 1 if goalie_of_day.stats.decision == Decision.O else 0
+        goalie.shots += goalie_of_day.stats.shots
+        goalie.saves += goalie_of_day.stats.saves
+
+
+def parse_all_season_players_stats() -> SeasonStats:
+    season = get_season_info()
+    db = get_database()
+
+    stats = SeasonStats()
+    games_played: dict[int, int] = {}
+
+    current = season.start_season_date
     delta = datetime.timedelta(days=1)
-    number_of_games_per_player: dict[int, int] = {}
 
-    while start_date <= end_date:
-        print(f"Processing date: {start_date}")
-        # TODO: Get the daily leaders from database on that specific dates continue if there is no data for a specific date.
-        doc = db.day_leaders.find_one({"date": str(start_date)})
+    while current <= season.end_season_date:
+        doc = db.day_leaders.find_one({"date": str(current)})
 
-        if doc is None:
-            start_date += delta
-            continue
-        
-        today_pointers: MongoDailyLeaders = MongoDailyLeaders(**doc)
+        if doc is not None:
+            accumulate_day(stats, games_played, MongoDailyLeaders(**doc))
 
-        for p in today_pointers.played:
-            if p not in number_of_games_per_player:
-                number_of_games_per_player[p] = 0
-            number_of_games_per_player[p] += 1
-        
-        for player in today_pointers.skaters:
-            if player.id not in player_stats:
-                player_stats[player.id] = SkaterStats(active=True, game_played=number_of_games_per_player[player.id], goals=player.stats.goals, assists=player.stats.assists, points=player.stats.goals + player.stats.assists, points_per_game=0)
-            else:
-                player_stats[player.id].game_played = number_of_games_per_player[player.id]
-                player_stats[player.id].goals += player.stats.goals
-                player_stats[player.id].assists += player.stats.assists
-                player_stats[player.id].points += player.stats.goals + player.stats.assists
-                player_stats[player.id].points_per_game = player_stats[player.id].points / player_stats[player.id].game_played
-                
+        current += delta
 
-        for player in today_pointers.goalies:
-            goal_against_average =  player.stats.shots - player.stats.saves
-            save_percentage = player.stats.saves / (player.stats.shots or 1)
-            if player.id not in player_stats:
-                player_stats[player.id] = GoalieStats(active=True, 
-                                                      game_played=number_of_games_per_player[player.id], 
-                                                      wins=1 if player.stats.decision == Decision.W else 0, 
-                                                      ot=1 if player.stats.decision == Decision.O else 0, 
-                                                      shots=player.stats.shots, 
-                                                      saves=player.stats.saves, 
-                                                      goal_against_average=goal_against_average, 
-                                                      save_percentage=save_percentage)
-            else:
-                player_stats[player.id].game_played = number_of_games_per_player[player.id]
-                player_stats[player.id].wins += 1 if player.stats.decision == Decision.W else 0
-                player_stats[player.id].ot += 1 if player.stats.decision == Decision.O else 0
-                player_stats[player.id].shots += player.stats.shots 
-                player_stats[player.id].saves += player.stats.saves
-                player_stats[player.id].save_percentage = player_stats[player.id].saves / (player_stats[player.id].shots or 1)
-                player_stats[player.id].goal_against_average = (player_stats[player.id].shots - player_stats[player.id].saves) / number_of_games_per_player[player.id]
+    stats.finalize(games_played)
+    return stats
 
 
-        start_date += delta
-    
-    return player_stats
-
-def erase_player_stats()-> None:
+def erase_player_stats() -> None:
     # Fields to set to null
     update_fields = {
         "assists": None,
@@ -107,22 +116,64 @@ def erase_player_stats()-> None:
         "wins": None,
         "ot": None,
         "saves": None,
-        "shots": None
+        "shots": None,
     }
 
     # Update all documents
-    result = db.players.update_many({}, {"$set": update_fields})
-
-def update_player_stats(player_stats: dict[int, SkaterStats | GoalieStats]) -> None:
-    for player_id, stats in player_stats.items():
-        # TODO: update the current player stats for the season.
-        db.players.update_one({"id": player_id}, {"$set": asdict(stats)})
-
-erase_player_stats()
-
-player_stats = parse_all_season_players_stats()
-print(player_stats)
-print(len(player_stats.keys()))
+    get_database().players.update_many({}, {"$set": update_fields})
 
 
-update_player_stats(player_stats)
+def update_player_stats(stats: SeasonStats) -> None:
+    players = get_database().players
+    for player_id, document in stats.as_documents().items():
+        players.update_one({"id": player_id}, {"$set": document})
+
+
+def has_season_started(today: datetime.date, season: SeasonInfo) -> bool:
+    """
+    Whether there is at least one completed day of the season to cumulate.
+
+    The backend rolls `GET /season-info` over to the next season months before
+    it starts, so most of the year the range this job would scan holds no
+    `day_leaders` at all. Running anyway erases every player's stats and then
+    recomputes nothing, which is why this is checked before anything is written.
+
+    The start date itself does not count: no game has finished when the job runs
+    on the morning of opening day.
+    """
+    return today > season.start_season_date
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO)
+
+    season = get_season_info()
+
+    if not has_season_started(datetime.date.today(), season):
+        logging.info(
+            f"Season {season.season} starts {season.start_season_date} and has no completed days yet; "
+            "leaving the current stats alone."
+        )
+        return
+
+    # Cumulate before erasing, not after: the stats are null between the two
+    # calls, and any job that reads a player in that window writes the nulls
+    # back. Season-long scan first keeps that window to the writes themselves.
+    stats = parse_all_season_players_stats()
+    logging.info(f"{len(stats.skaters)} skaters and {len(stats.goalies)} goalies cumulated")
+
+    if not stats.skaters and not stats.goalies:
+        # In season with nothing to show means the daily job stopped filling
+        # `day_leaders`, not that nobody has scored. Erasing here would throw
+        # away the only remaining copy of the totals.
+        raise RuntimeError(
+            f"No day_leaders found between {season.start_season_date} and {season.end_season_date}; "
+            "refusing to erase the stats already on record."
+        )
+
+    erase_player_stats()
+    update_player_stats(stats)
+
+
+if __name__ == "__main__":
+    main()

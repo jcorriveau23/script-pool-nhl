@@ -1,16 +1,15 @@
-from dataclasses import dataclass
 from enum import StrEnum
 
-from bson import ObjectId
+from pydantic import BaseModel
 
-@dataclass
+
 class Position(StrEnum):
-    F = "F",
-    D = "D",
+    F = "F"
+    D = "D"
     G = "G"
 
-@dataclass
-class PlayerInfo:
+
+class PlayerInfo(BaseModel):
     id: int
     active: bool
     name: str
@@ -35,6 +34,12 @@ class PlayerInfo:
     wins: int | None
     ot: int | None
 
-@dataclass
+
 class MongoPlayerInfo(PlayerInfo):
-    _id: ObjectId
+    """
+    A document read straight out of MongoDB.
+
+    Mongo's `_id` is simply dropped: pydantic ignores unknown keys on input, so
+    it never reaches `model_dump()` and therefore never lands in a `$set`, which
+    MongoDB would reject as an attempt to modify an immutable field.
+    """

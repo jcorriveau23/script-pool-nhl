@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh the injured players list hourly
+
+[Timer]
+OnCalendar=hourly
+# An hour is long enough that a reboot straddling the run is worth catching up
+# on: the frontend reads the JSON this writes.
+Persistent=true
+Unit=nhl-job@nhl-injuries.service
+
+[Install]
+WantedBy=timers.target

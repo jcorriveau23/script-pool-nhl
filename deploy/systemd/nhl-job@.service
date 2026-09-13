@@ -1,0 +1,21 @@
+# One unit for every job: the instance name is the command to run, so
+#   systemctl start nhl-job@nhl-injuries.service
+# runs `nhl-injuries` in the scraper image. The timers in this directory point at
+# instances of this template, and a one-off run by hand is the same command.
+[Unit]
+Description=NHL pool scraper job %i
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+
+# The compose file owns the environment, the network and the volume the injury
+# JSON is written to, so the job is run through compose rather than `docker run`
+# to avoid restating all of it here.
+WorkingDirectory=/srv/slapshot
+ExecStart=/usr/bin/docker compose run --rm --no-deps scraper %i
+
+# Long enough for the slowest job (nhl-cumulate-stats rebuilds every player's
+# season totals); systemd kills the run rather than letting it hang forever.
+TimeoutStartSec=1800

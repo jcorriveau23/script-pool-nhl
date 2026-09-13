@@ -1,3 +1,15 @@
-injured_players.json
+__pycache__/
 *.pyc
 *.html
+.env
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Job outputs
+injured_players.json
+non-matching-players-cbs.json
