@@ -11,9 +11,9 @@ import logging
 
 from pydantic import BaseModel
 
-from nhl_helper.config import get_settings
 from nhl_helper.data.daily_leaders import Decision, MongoDailyLeaders
 from nhl_helper.db import get_database
+from nhl_helper.season import get_season_info
 
 
 class SkaterStats(BaseModel):
@@ -82,16 +82,16 @@ def accumulate_day(stats: SeasonStats, games_played: dict[int, int], day: MongoD
 
 
 def parse_all_season_players_stats() -> SeasonStats:
-    settings = get_settings()
+    season = get_season_info()
     db = get_database()
 
     stats = SeasonStats()
     games_played: dict[int, int] = {}
 
-    current = settings.season_start
+    current = season.start_season_date
     delta = datetime.timedelta(days=1)
 
-    while current <= settings.season_end:
+    while current <= season.end_season_date:
         doc = db.day_leaders.find_one({"date": str(current)})
 
         if doc is not None:

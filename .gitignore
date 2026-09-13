@@ -9,5 +9,4 @@ __pycache__/
 
 # Job outputs
 injured_players.json
-injured-players.json
 non-matching-players-cbs.json

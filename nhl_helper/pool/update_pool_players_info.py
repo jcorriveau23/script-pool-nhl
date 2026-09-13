@@ -1,8 +1,8 @@
 import logging
 from typing import Any
 
-from nhl_helper.config import get_settings
 from nhl_helper.db import get_database
+from nhl_helper.season import get_season_info
 
 
 def get_all_pool_player_ids(pooler_roster: dict[str, Any]) -> list[int]:
@@ -66,7 +66,7 @@ def update_pool_players(current_season: int) -> None:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
-    update_pool_players(get_settings().current_season)
+    update_pool_players(get_season_info().season)
 
 
 if __name__ == "__main__":

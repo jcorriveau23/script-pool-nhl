@@ -6,7 +6,6 @@ Every value can be overridden with an environment variable prefixed with
 change to run against a different database, proxy or output directory.
 """
 
-from datetime import date
 from functools import lru_cache
 from pathlib import Path
 
@@ -28,6 +27,11 @@ class Settings(BaseSettings):
     cbs_injuries_url: str = "https://www.cbssports.com/nhl/injuries/"
     capwages_url: str = "https://capwages.com/players/active"
 
+    # The rust backend, which owns the season constants (see nhl_helper.season).
+    # Every route it serves lives under /api-rust, so the prefix belongs in the
+    # base url; behind the reverse proxy this is http://host/api-rust as well.
+    pool_api_url: str = "http://localhost:8000/api-rust"
+
     # Every outbound HTTP call uses this timeout; without one a hung connection
     # blocks the scheduler thread forever.
     request_timeout_seconds: float = 30.0
@@ -35,11 +39,6 @@ class Settings(BaseSettings):
     # --- Outputs -----------------------------------------------------------
     injured_players_output: Path = Path("injured-players.json")
     non_matching_players_output: Path = Path("non-matching-players-cbs.json")
-
-    # --- Season ------------------------------------------------------------
-    current_season: int = 20252026
-    season_start: date = date(2025, 10, 7)
-    season_end: date = date(2026, 4, 16)
 
 
 @lru_cache(maxsize=1)
