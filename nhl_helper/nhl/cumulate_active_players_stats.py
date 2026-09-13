@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from nhl_helper.data.daily_leaders import Decision, MongoDailyLeaders
 from nhl_helper.db import get_database
-from nhl_helper.season import get_season_info
+from nhl_helper.season import SeasonInfo, get_season_info
 
 
 class SkaterStats(BaseModel):
@@ -129,14 +129,49 @@ def update_player_stats(stats: SeasonStats) -> None:
         players.update_one({"id": player_id}, {"$set": document})
 
 
+def has_season_started(today: datetime.date, season: SeasonInfo) -> bool:
+    """
+    Whether there is at least one completed day of the season to cumulate.
+
+    The backend rolls `GET /season-info` over to the next season months before
+    it starts, so most of the year the range this job would scan holds no
+    `day_leaders` at all. Running anyway erases every player's stats and then
+    recomputes nothing, which is why this is checked before anything is written.
+
+    The start date itself does not count: no game has finished when the job runs
+    on the morning of opening day.
+    """
+    return today > season.start_season_date
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
 
-    erase_player_stats()
+    season = get_season_info()
 
+    if not has_season_started(datetime.date.today(), season):
+        logging.info(
+            f"Season {season.season} starts {season.start_season_date} and has no completed days yet; "
+            "leaving the current stats alone."
+        )
+        return
+
+    # Cumulate before erasing, not after: the stats are null between the two
+    # calls, and any job that reads a player in that window writes the nulls
+    # back. Season-long scan first keeps that window to the writes themselves.
     stats = parse_all_season_players_stats()
     logging.info(f"{len(stats.skaters)} skaters and {len(stats.goalies)} goalies cumulated")
 
+    if not stats.skaters and not stats.goalies:
+        # In season with nothing to show means the daily job stopped filling
+        # `day_leaders`, not that nobody has scored. Erasing here would throw
+        # away the only remaining copy of the totals.
+        raise RuntimeError(
+            f"No day_leaders found between {season.start_season_date} and {season.end_season_date}; "
+            "refusing to erase the stats already on record."
+        )
+
+    erase_player_stats()
     update_player_stats(stats)
 
 

@@ -3,6 +3,8 @@ The cumulator is where a first appearance used to produce wrong averages, so the
 single-day cases below are the point of this file.
 """
 
+import datetime
+
 from nhl_helper.data.daily_leaders import (
     Decision,
     GoalieDailyStats,
@@ -11,7 +13,8 @@ from nhl_helper.data.daily_leaders import (
     SkatersDailyStats,
     SkaterStats,
 )
-from nhl_helper.nhl.cumulate_active_players_stats import SeasonStats, accumulate_day
+from nhl_helper.nhl.cumulate_active_players_stats import SeasonStats, accumulate_day, has_season_started
+from nhl_helper.season import SeasonInfo
 
 
 def skater(player_id: int, goals: int, assists: int) -> SkatersDailyStats:
@@ -137,3 +140,23 @@ def test_documents_exclude_nothing_and_cover_both_groups():
     assert set(documents) == {1, 2}
     assert documents[1]["points"] == 1
     assert documents[2]["wins"] == 1
+
+
+def season_info(start: str) -> SeasonInfo:
+    return SeasonInfo(
+        start_season_date=start, end_season_date="2027-4-15", season=20262027, trade_deadline_date="2027-3-5"
+    )
+
+
+def test_offseason_does_not_cumulate():
+    # The backend points at the next season months ahead; scanning that range
+    # would erase every stat and recompute nothing.
+    assert not has_season_started(datetime.date(2026, 9, 12), season_info("2026-9-29"))
+
+
+def test_opening_day_morning_does_not_cumulate():
+    assert not has_season_started(datetime.date(2026, 9, 29), season_info("2026-9-29"))
+
+
+def test_day_after_opening_cumulates():
+    assert has_season_started(datetime.date(2026, 9, 30), season_info("2026-9-29"))

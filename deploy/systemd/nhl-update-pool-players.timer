@@ -1,0 +1,15 @@
+# Half an hour after nhl-nightly.timer, because this job copies player documents
+# into every pool and wants the refreshed ones. The gap is the only thing
+# ordering the two: systemd's After= does not hold across separate timers, so if
+# the 05:00 chain ever grows past 30 minutes this job should move into
+# nhl-nightly.service as a fourth step instead.
+[Unit]
+Description=Refresh the player info embedded in each pool, daily at 05:30
+
+[Timer]
+OnCalendar=*-*-* 05:30:00
+Persistent=true
+Unit=nhl-job@nhl-update-pool-players.service
+
+[Install]
+WantedBy=timers.target

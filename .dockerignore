@@ -1,0 +1,12 @@
+.git
+.github
+.venv
+.mypy_cache
+.pytest_cache
+.ruff_cache
+tests
+.env
+# Scraper outputs written during local runs; the container writes its own.
+injured-players.json
+injured_players.json
+non-matching-players-cbs.json

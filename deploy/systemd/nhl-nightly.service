@@ -1,0 +1,29 @@
+# The three jobs that rewrite the `players` collection, run back to back.
+#
+# They are one unit rather than three timers at the same minute because all
+# three read a player document, modify it and write it back, and two of them
+# $set the whole document: nhl-active-players and nhl-contracts both carry over
+# the fields they did not touch from the copy they read. Run at once, a roster
+# sync that read a player before nhl-cumulate-stats erased its stats would write
+# the stale numbers straight back over the freshly computed ones, and nothing
+# would report an error.
+[Unit]
+Description=Nightly NHL player refresh (roster, contracts, season totals)
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/srv/slapshot
+
+# Order matters: the roster sync first, so a player signed today exists for the
+# other two to match on, and the season totals last, since that is the only step
+# whose $set is narrow enough not to disturb what the other two wrote.
+ExecStart=/usr/bin/docker compose run --rm --no-deps scraper nhl-active-players
+ExecStart=/usr/bin/docker compose run --rm --no-deps scraper nhl-contracts
+ExecStart=/usr/bin/docker compose run --rm --no-deps scraper nhl-cumulate-stats
+
+# No "-" prefix on those: a failed step stops the chain and leaves the unit in
+# `systemctl --failed`, rather than letting the next job build on a collection
+# that is half updated.
+TimeoutStartSec=1800

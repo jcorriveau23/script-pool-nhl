@@ -11,11 +11,9 @@ dependencies = [
     "pydantic-settings>=2.14.2",
     "pymongo>=4.14.1",
     "requests>=2.32.5",
-    "schedule>=1.2.2",
 ]
 
 [project.scripts]
-nhl-scheduler = "nhl_helper.main_scheduler:main"
 nhl-daily-leaders = "nhl_helper.nhl.get_daily_points_leaders:main"
 nhl-injuries = "nhl_helper.nhl.get_injury:main"
 nhl-active-players = "nhl_helper.nhl.get_active_players:main"

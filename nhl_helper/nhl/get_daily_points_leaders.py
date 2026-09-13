@@ -21,9 +21,6 @@ from nhl_helper.data.daily_leaders import (
 from nhl_helper.db import get_database
 from nhl_helper.utils.date import get_date_of_interest
 
-# Games whose final stats have already been stored, so they no longer need polling.
-_end_games: set[int] = set()
-
 
 def get_day_leaders_data(day: date) -> MongoDailyLeaders:
     result = get_database().day_leaders.find_one({"date": str(day)})
@@ -132,10 +129,6 @@ def fetch_pointers_day(date_of_interest: date | None = None):
             logging.info(f"Skip the game! | gameState: {game_state}")
             continue     # fetch the game stats until there is no more update
 
-        if game_id in _end_games:
-            logging.info(f"Skip the game! | Game Ended: {game_id}")
-            continue
-
         # Fetch the game boxscore and landing to be able to find every game information data.
         response = requests.get(f'{settings.nhl_proxy_url}/game/{game_id}/boxscore', timeout=timeout)
         response.raise_for_status()
@@ -208,10 +201,15 @@ def fetch_pointers_day(date_of_interest: date | None = None):
                     if goalie['playerId'] not in day_leaders_data.played:
                         day_leaders_data.played.append(goalie['playerId'])
 
-        # The game is over and its stats have just been stored, so there is
-        # nothing left to poll for it today.
-        if game_state in ("OFF", "FINAL"):
-            _end_games.add(game_id)
+    if not day_leaders_data.skaters and not day_leaders_data.goalies and not day_leaders_data.played:
+        # Nothing is known about this date: no games at all, or only games that
+        # are preseason or have not started. Writing anyway would seed
+        # `day_leaders` with a skeleton document for every dark day of the
+        # offseason, which nhl-cumulate-stats then walks every morning for
+        # nothing. A date that already has results never reaches here, since
+        # `get_day_leaders_data` seeds the run with them.
+        logging.info(f"Nothing recorded for {date_of_interest}; leaving day_leaders untouched.")
+        return
 
     get_database().day_leaders.update_one(
         {'date': str(date_of_interest)}, {'$set': day_leaders_data.model_dump()}, upsert=True
