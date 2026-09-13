@@ -1,3 +1,7 @@
+from datetime import date
+
+import pytest
+
 from nhl_helper.data.daily_leaders import (
     DailyLeaders,
     Decision,
@@ -8,10 +12,12 @@ from nhl_helper.data.daily_leaders import (
 )
 from nhl_helper.nhl.get_daily_points_leaders import (
     get_goalies_goals_and_assists,
+    is_in_season,
     remove_skaters_stats,
     update_goalies_stats,
     update_skaters_stats,
 )
+from nhl_helper.season import SeasonInfo
 
 
 def empty_day() -> DailyLeaders:
@@ -109,3 +115,30 @@ def test_goalie_goals_and_assists_come_from_the_landing():
     # The boxscore does not report goalie points, so they are read from the landing.
     assert get_goalies_goals_and_assists(55, landing) == (1, 2)
     assert get_goalies_goals_and_assists(999, landing) == (0, 0)
+
+
+def season() -> SeasonInfo:
+    return SeasonInfo(
+        start_season_date=date(2026, 9, 29),
+        end_season_date=date(2027, 4, 10),
+        season=20262027,
+        trade_deadline_date=date(2027, 3, 1),
+    )
+
+
+@pytest.mark.parametrize(
+    ("day", "expected"),
+    [
+        # Both bounds are in season: games are played on opening day, and a run
+        # after midnight on the day after the last one still fetches it.
+        (date(2026, 9, 29), True),
+        (date(2027, 4, 10), True),
+        (date(2027, 1, 15), True),
+        # Offseason on either side of the backend's rollover.
+        (date(2026, 9, 28), False),
+        (date(2027, 4, 11), False),
+        (date(2026, 7, 1), False),
+    ],
+)
+def test_only_days_inside_the_season_window_are_polled(day, expected):
+    assert is_in_season(day, season()) is expected

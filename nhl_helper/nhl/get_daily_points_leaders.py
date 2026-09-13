@@ -19,6 +19,7 @@ from nhl_helper.data.daily_leaders import (
     SkaterStats,
 )
 from nhl_helper.db import get_database
+from nhl_helper.season import SeasonInfo, get_season_info
 from nhl_helper.utils.date import get_date_of_interest
 
 
@@ -98,6 +99,27 @@ def get_goalies_goals_and_assists(goalie_id: int, landing: Any)->tuple[int, int]
                     assists += 1
 
     return goals, assists
+
+def is_in_season(day: date, season: SeasonInfo) -> bool:
+    return season.start_season_date <= day <= season.end_season_date
+
+
+def should_poll(day: date) -> bool:
+    try:
+        season = get_season_info()
+    except requests.RequestException as error:
+        logging.warning(f"Could not read the season window ({error}); polling anyway.")
+        return True
+
+    if is_in_season(day, season):
+        return True
+
+    logging.info(
+        f"{day} is outside the {season.season} season "
+        f"({season.start_season_date} to {season.end_season_date}); nothing to poll."
+    )
+    return False
+
 
 def fetch_pointers_day(date_of_interest: date | None = None):
     # To make sure that we fetch points of games that finish after 12AM, we fetch previous day before 12PM.
@@ -220,13 +242,20 @@ def main() -> None:
     """
     Fetch the day of interest by default, or backfill a date range with --start/--end.
     """
+    logging.basicConfig(level=logging.INFO)
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--start", type=date.fromisoformat, help="First day to fetch (YYYY-MM-DD).")
     parser.add_argument("--end", type=date.fromisoformat, help="Last day to fetch, inclusive. Defaults to --start.")
     args = parser.parse_args()
 
     if args.start is None:
-        fetch_pointers_day()
+        # The season window guards the scheduled run only. A backfill names its
+        # dates explicitly, and second-guessing them would make the one command
+        # that exists to repair a gap refuse to run.
+        day = get_date_of_interest()
+        if should_poll(day):
+            fetch_pointers_day(day)
         return
 
     current = args.start
