@@ -7,7 +7,7 @@
 Description=Refresh the player info embedded in each pool, daily at 05:30
 
 [Timer]
-OnCalendar=*-*-* 05:30:00
+OnCalendar=*-*-* 05:30:00 America/Toronto
 Persistent=true
 Unit=nhl-job@nhl-update-pool-players.service
 

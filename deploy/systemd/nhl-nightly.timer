@@ -2,8 +2,8 @@
 Description=Refresh players daily at 05:00
 
 [Timer]
-# Host local time, like every OnCalendar= here.
-OnCalendar=*-*-* 05:00:00
+# Eastern time, like the poller, so the chain stays in the gap it leaves.
+OnCalendar=*-*-* 05:00:00 America/Toronto
 # A reboot straddling 05:00 should not cost a day of contract and stat updates.
 Persistent=true
 Unit=nhl-nightly.service

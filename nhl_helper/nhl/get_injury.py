@@ -53,6 +53,7 @@ def parse_injured_players(
                     date=tds[2].text.strip(),
                     type=tds[3].text.strip(),
                     recovery=tds[4].text.strip(),
+                    team=player_found.team,
                 )
             else:
                 logging.warning(f"{player_name} was not found in database.")

@@ -6,6 +6,7 @@ the end, so a player who only appears on a single day gets the same treatment as
 one who appears every night.
 """
 
+import argparse
 import datetime
 import logging
 
@@ -52,9 +53,7 @@ class SeasonStats(BaseModel):
             goalie.game_played = games_played.get(player_id, 0)
             goalie.save_percentage = round(goalie.saves / goalie.shots, 4) if goalie.shots else 0.0
             goals_against = goalie.shots - goalie.saves
-            goalie.goal_against_average = (
-                round(goals_against / goalie.game_played, 4) if goalie.game_played else 0.0
-            )
+            goalie.goal_against_average = round(goals_against / goalie.game_played, 4) if goalie.game_played else 0.0
 
     def as_documents(self) -> dict[int, dict]:
         return {player_id: stats.model_dump() for player_id, stats in (self.skaters | self.goalies).items()}
@@ -81,17 +80,23 @@ def accumulate_day(stats: SeasonStats, games_played: dict[int, int], day: MongoD
         goalie.saves += goalie_of_day.stats.saves
 
 
-def parse_all_season_players_stats() -> SeasonStats:
-    season = get_season_info()
+def parse_all_season_players_stats(start: datetime.date, end: datetime.date) -> SeasonStats:
+    """
+    Cumulate every `day_leaders` document between `start` and `end`, inclusive.
+
+    The range is passed in rather than read from the season info so the same
+    walk can rebuild a past season's totals, which is what a draft held after
+    opening day needs on the board.
+    """
     db = get_database()
 
     stats = SeasonStats()
     games_played: dict[int, int] = {}
 
-    current = season.start_season_date
+    current = start
     delta = datetime.timedelta(days=1)
 
-    while current <= season.end_season_date:
+    while current <= end:
         doc = db.day_leaders.find_one({"date": str(current)})
 
         if doc is not None:
@@ -145,21 +150,46 @@ def has_season_started(today: datetime.date, season: SeasonInfo) -> bool:
 
 
 def main() -> None:
+    """
+    Rebuild the current season's totals, or another range with --start/--end.
+
+    The range form is for a draft held once the season is under way: the board
+    is only useful with a full season of numbers on it, so the totals are
+    rebuilt from the season that just ended. Nothing is lost by doing so --
+    `day_leaders` keeps every day of every season, so the scheduled run puts
+    the current totals back the next morning.
+    """
     logging.basicConfig(level=logging.INFO)
 
-    season = get_season_info()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--start", type=datetime.date.fromisoformat, help="First day to cumulate (YYYY-MM-DD).")
+    parser.add_argument("--end", type=datetime.date.fromisoformat, help="Last day to cumulate, inclusive.")
+    args = parser.parse_args()
 
-    if not has_season_started(datetime.date.today(), season):
-        logging.info(
-            f"Season {season.season} starts {season.start_season_date} and has no completed days yet; "
-            "leaving the current stats alone."
-        )
-        return
+    if (args.start is None) != (args.end is None):
+        parser.error("--start and --end go together: a half-open range would silently cumulate the wrong season.")
+
+    if args.start is None:
+        season = get_season_info()
+
+        if not has_season_started(datetime.date.today(), season):
+            logging.info(
+                f"Season {season.season} starts {season.start_season_date} and has no completed days yet; "
+                "leaving the current stats alone."
+            )
+            return
+
+        start, end = season.start_season_date, season.end_season_date
+    else:
+        # An explicit range is a deliberate rebuild, so the season-window guard
+        # above does not apply: refusing here would block the one call that
+        # exists to put a past season on the board.
+        start, end = args.start, args.end
 
     # Cumulate before erasing, not after: the stats are null between the two
     # calls, and any job that reads a player in that window writes the nulls
     # back. Season-long scan first keeps that window to the writes themselves.
-    stats = parse_all_season_players_stats()
+    stats = parse_all_season_players_stats(start, end)
     logging.info(f"{len(stats.skaters)} skaters and {len(stats.goalies)} goalies cumulated")
 
     if not stats.skaters and not stats.goalies:
@@ -167,8 +197,7 @@ def main() -> None:
         # `day_leaders`, not that nobody has scored. Erasing here would throw
         # away the only remaining copy of the totals.
         raise RuntimeError(
-            f"No day_leaders found between {season.start_season_date} and {season.end_season_date}; "
-            "refusing to erase the stats already on record."
+            f"No day_leaders found between {start} and {end}; refusing to erase the stats already on record."
         )
 
     erase_player_stats()
