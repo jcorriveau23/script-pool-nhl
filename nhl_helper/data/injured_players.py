@@ -7,6 +7,11 @@ class InjuredPlayerInfo(BaseModel):
    date: str
    type: str
    recovery: str
+   # The NHL team id the player is under contract to, from the players
+   # collection. Written into the file so the frontend's injury report does not
+   # have to resolve every player's team against the NHL API. `None` for a
+   # player with no current team, such as an unsigned free agent.
+   team: int | None = None
 
 class MongoInjuredPlayerInfo(InjuredPlayerInfo):
     """
