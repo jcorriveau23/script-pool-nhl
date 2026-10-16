@@ -30,13 +30,15 @@ work, and exits non-zero if it fails. Nothing here is a daemon — see
 | `nhl-injuries` | Write the current injury list to a JSON file for the frontend | cbssports.com |
 | `nhl-active-players` | Sync the roster of active players into `players` | search.d3.nhle.com |
 | `nhl-contracts` | Add age, cap hit and contract expiry to `players` | capwages.com |
-| `nhl-cumulate-stats` | Rebuild season totals in `players` from `day_leaders` | local database |
+| `nhl-cumulate-stats` | Rebuild season totals in `players` and `player_season_stats` from `day_leaders` | local database |
 | `nhl-update-pool-players` | Refresh the player info embedded in each pool | local database |
 
 The season dates and the current season id are not configured here: the two
 season-aware jobs read them from the rust backend's `GET /season-info`, so the
-season rolls over without a change in this repo. Both jobs fail if that endpoint
-is unreachable — see `NHL_HELPER_POOL_API_URL`.
+season rolls over without a change in this repo. `GET /seasons` serves the same
+shape for every season on record, which is what a backfill resolves its dates
+from. Both jobs fail if those endpoints are unreachable — see
+`NHL_HELPER_POOL_API_URL`.
 
 `nhl-daily-leaders` also backfills a date range:
 
@@ -44,8 +46,34 @@ is unreachable — see `NHL_HELPER_POOL_API_URL`.
 nhl-daily-leaders --start 2026-03-01 --end 2026-03-12
 ```
 
-`nhl-cumulate-stats` erases every player's stats before recomputing them from
-`day_leaders`, so it needs a complete set of daily documents for the season.
+### Where the totals land
+
+`nhl-cumulate-stats` writes to two collections:
+
+- **`players`** — one document per player, holding who he is *today* (team,
+  age, cap hit, contract) together with the **current** season's totals. This
+  is what every live view reads. The job erases the stat fields before
+  recomputing them, so it needs a complete set of daily documents for the
+  season.
+- **`player_season_stats`** — one row per (player, season), holding counting
+  stats only, upserted on `(id, season)`. This is what a draft held after
+  opening day reads, through `GET /players?season=20252026`: identity stays
+  current and only the numbers are swapped, so the board shows last season's
+  points on this season's roster.
+
+Identity is deliberately not duplicated per season. There is no "players
+collection per season".
+
+Backfill a past season's rows — `players` is left alone, so this is safe to run
+mid-season with the timers up:
+
+```bash
+nhl-cumulate-stats --season 20252026
+nhl-cumulate-stats --season 20222023 20232024 20242025   # several at once
+```
+
+Nothing here is destructive: `day_leaders` keeps every day of every season, so
+any season's totals can be rebuilt at any time.
 
 ## Scheduling
 
@@ -54,7 +82,7 @@ process inside the repo:
 
 | When | What runs |
 | --- | --- |
-| every 3 min, 12:00–02:57 | `nhl-daily-leaders` |
+| every 3 min | `nhl-daily-leaders` |
 | hourly | `nhl-injuries` |
 | 05:00 | `nhl-active-players`, then `nhl-contracts`, then `nhl-cumulate-stats` |
 | 05:30 | `nhl-update-pool-players` |
@@ -66,11 +94,13 @@ would quietly undo each other — a roster sync that read a player before
 `nhl-cumulate-stats` erased its stats would put the stale numbers straight back.
 The 05:30 job then copies those refreshed documents into each pool.
 
-`nhl-daily-leaders` only runs during the hours a game can be in progress — noon
-through 02:57 local, matinees to west-coast overtime. Outside that window the
-schedule cannot change, so the nine idle hours were only costing container
-starts. It also means the 05:00 chain never reads `day_leaders` while the poller
-is writing it. The host runs on ET, which those bounds assume.
+`nhl-daily-leaders` runs around the clock rather than only during game hours,
+so a game at an unusual hour is still polled. It overlaps the 05:00 chain, which
+is harmless: each run replaces one `day_leaders` document in a single write. The
+daily timers name `America/Toronto` themselves, so the host's own timezone does
+not matter; the `scraper` service needs `TZ: America/Toronto` too, because the
+job picks the date to poll from the container's clock — before noon Eastern it
+polls the previous day.
 
 The units in [deploy/systemd](deploy/systemd) expect a `scraper` service in
 `/srv/slapshot/docker-compose.yml` that carries the environment and the volume
@@ -94,8 +124,8 @@ journalctl -u nhl-nightly -f           # what the last runs did
 ```
 
 A run that overruns its interval does not stack up: systemd drops the trigger
-while the instance is still active. `OnCalendar=` times are the host's local
-time.
+while the instance is still active. `OnCalendar=` times are Eastern, except the
+hourly injuries run, which has no hour to get wrong.
 
 ## Collections
 

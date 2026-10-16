@@ -1,21 +1,17 @@
-# Poll live games, but only during the hours games can actually be in progress.
-# Two OnCalendar= lines are OR'd: noon through 02:57 Eastern, covering holiday
-# matinees at one end and west-coast overtime at the other. The roughly nine
-# remaining hours used to be ~180 container starts a day against a schedule that
-# could not have changed.
+# Poll live games every 3 minutes, around the clock. An earlier version only
+# ran from noon to 02:57 Eastern to save container starts, but every game
+# outside that window (a European Global Series afternoon, a night that ran
+# late) was silently never polled, and the window had to be kept in step with
+# the host's timezone. A run with no game in progress costs one container start.
 #
-# The gap also lands the 05:00 nightly chain outside this window, so
-# nhl-cumulate-stats no longer reads `day_leaders` while this job is writing it.
-#
-# Eastern time, which is what the NHL schedule is built around, and spelled out
-# on each line because the host runs on UTC: left to the host's clock this
-# window closed at 22:57 ET, in the middle of the evening games.
+# The 05:00 nightly chain now overlaps it. That is safe: each run replaces one
+# `day_leaders` document in a single write, so nhl-cumulate-stats sees either
+# the previous version or the new one, and by 05:00 last night's games are over.
 [Unit]
-Description=Poll NHL daily leaders every 3 minutes during game hours
+Description=Poll NHL daily leaders every 3 minutes
 
 [Timer]
-OnCalendar=*-*-* 12..23:00/3 America/Toronto
-OnCalendar=*-*-* 00..02:00/3 America/Toronto
+OnCalendar=*:00/3
 # No Persistent= here on purpose: after downtime the next run is at most three
 # minutes away, so catching up on a missed one buys nothing.
 Unit=nhl-job@nhl-daily-leaders.service

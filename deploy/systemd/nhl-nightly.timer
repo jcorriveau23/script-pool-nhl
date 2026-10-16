@@ -2,7 +2,8 @@
 Description=Refresh players daily at 05:00
 
 [Timer]
-# Eastern time, like the poller, so the chain stays in the gap it leaves.
+# Eastern time, so 05:00 stays after the last west-coast game whatever the
+# host's own timezone is.
 OnCalendar=*-*-* 05:00:00 America/Toronto
 # A reboot straddling 05:00 should not cost a day of contract and stat updates.
 Persistent=true
